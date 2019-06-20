@@ -358,6 +358,56 @@ std::vector<double> Coulomb::calculate_R_abcd_k(const DiracSpinor &psi_a,
 }
 
 //******************************************************************************
+std::vector<double>
+Coulomb::calculate_X_abcd_k(const DiracSpinor &psi_a, const DiracSpinor &psi_b,
+                            const DiracSpinor &psi_c,
+                            const DiracSpinor &psi_d) const {
+  // tmp_X is NOT offset by kmin
+  auto tmp_X = calculate_R_abcd_k(psi_a, psi_b, psi_c, psi_d);
+  auto kmax = abs(psi_b.twoj() + psi_d.twoj()) / 2;
+  // C IS offset by kmin
+  auto kmin = abs(psi_b.twoj() - psi_d.twoj()) / 2;
+  auto C_ac = get_angular_C_kiakib_k(psi_a.k_index(), psi_c.k_index());
+  auto C_bd = get_angular_C_kiakib_k(psi_b.k_index(), psi_d.k_index());
+
+  auto japjbp1 = (psi_a.twoj() + psi_b.twoj()) / 2 + 1;
+  for (int k = kmin; k <= kmax; k++) {
+    // sign: (-1)^{ja+0.5} * (-1)^{jb+0.5} * (-1)^k
+    //       = (-1)^{ja + jb + k + 1}
+    auto sign = (japjbp1 + k % 2 == 0) ? 1 : -1;
+    tmp_X[k] *= (sign * C_ac[k - kmin] * C_bd[k - kmin]);
+    ++k;
+  }
+  return tmp_X;
+}
+//******************************************************************************
+double Coulomb::calculate_Z_abcdk(const DiracSpinor &psi_a,
+                                  const DiracSpinor &psi_b,
+                                  const DiracSpinor &psi_c,
+                                  const DiracSpinor &psi_d, int k) const {
+  auto tja = psi_a.twoj();
+  auto tjb = psi_b.twoj();
+  auto tjc = psi_c.twoj();
+  auto tjd = psi_d.twoj();
+  // auto kkp1 = k * (k + 1); // DOESN"T WORK FOR k=0 !!!
+  auto kkp1 = 2 * k + 1; // DOESN"T WORK FOR k=0 !!!
+
+  auto Xabcd = calculate_X_abcd_k(psi_a, psi_b, psi_c, psi_d);
+  auto kmax = abs(tjb + tjd) / 2;
+  if (k > kmax)
+    return 0;
+
+  double sum = 0.0;
+  int ll = 0; // XXX X is NOT offset (prob should be..?)
+  for (const auto &x : Xabcd) {
+    auto sj = Wigner::sixj_2(tjc, tja, 2 * k, tjd, tjb, 2 * ll);
+    sum += sj * x;
+    ++ll;
+  }
+
+  return Xabcd[k] + kkp1 * sum;
+}
+//******************************************************************************
 void Coulomb::calculate_y_ijk(const DiracSpinor &phi_a,
                               const DiracSpinor &phi_b, const int k,
                               std::vector<double> &vabk)

@@ -100,20 +100,6 @@ int main(int argc, char *argv[]) {
   //               TESTS
   //*********************************************************
 
-  bool test_hf_basis = false;
-  if (test_hf_basis) {
-    auto basis_lst = wf.listOfStates_nk(6, 3);
-    std::vector<DiracSpinor> basis = wf.core_orbitals;
-    for (const auto &nk : basis_lst) {
-      basis.emplace_back(DiracSpinor(nk[0], nk[1], wf.rgrid));
-      auto tmp_vex = std::vector<double>{};
-      hf.solveValence(basis.back(), tmp_vex);
-    }
-    wf.orthonormaliseOrbitals(basis, 2);
-    wf.printValence(false, basis);
-    std::cout << "\n Total time: " << timer.reading_str() << "\n";
-  }
-
   if (run_test) {
     std::cout << "Test orthonormality [log-scale, should all read 0]:\n";
     for (int i = 0; i < 3; i++) {
@@ -261,9 +247,121 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // Coulomb cint(wf.core_orbitals, wf.valence_orbitals);
+  //**************************************************************************
+  // Playing with RPA.
+  // a) Extremely slow.
+  //    Many ineficiencies, including Z calculation.
+  //    Not taking advatage of any symmetries, and calculating Z EVERY TIME!
+  // b) Is the sign wrong?
+  // c) Also: correction is order-of-magnitude too small
+  //    - is this due to shitty basis? Or actually incorrect somewhere?
+
+  bool test_hf_basis = true;
+  std::vector<DiracSpinor> v_basis;
+  if (test_hf_basis) {
+    auto basis_lst = wf.listOfStates_nk(15, 2);
+    for (const auto &nk : basis_lst) {
+      v_basis.emplace_back(DiracSpinor(nk[0], nk[1], wf.rgrid));
+      auto tmp_vex = std::vector<double>{};
+      hf.solveValence(v_basis.back(), tmp_vex);
+    }
+    wf.orthonormaliseOrbitals(v_basis, 2);
+    wf.printValence(false, v_basis);
+    std::cout << "\n Total time: " << timer.reading_str() << "\n";
+  }
+
+  Coulomb cint(wf.core_orbitals, v_basis);
+  cint.form_core_valence();
+
+  ChronoTimer sw;
+  sw.start();
+  // const auto &psi_a = wf.core_orbitals.front();
+  E1Operator he1(wf.rgrid);
+
+  std::vector<std::vector<double>> t0_am;
+  t0_am.reserve(wf.core_orbitals.size());
+  for (const auto &psi_a : wf.core_orbitals) {
+    std::vector<double> t0a_m;
+    t0a_m.reserve(v_basis.size());
+    for (const auto &psi_m : v_basis) {
+      auto radInt = psi_a * (he1 * psi_m);
+      auto Cc = Wigner::Ck_kk(1, psi_a.k, psi_m.k);
+      t0a_m.push_back(radInt * Cc);
+    }
+    t0_am.push_back(t0a_m);
+  }
+  auto t_am = t0_am;
+
+  const auto &psi_v = wf.valence_orbitals[0];
+  const auto &psi_w = wf.valence_orbitals[1];
+  double omega = fabs(psi_v.en - psi_w.en);
+  double tvw_0 = Wigner::Ck_kk(1, psi_v.k, psi_w.k) * (psi_v * (he1 * psi_w));
+  double tvw_rpa = tvw_0;
+
+  for (int i = 0; i < 5; i++) {
+    double max = 0;
+    for (std::size_t ia = 0; ia < wf.core_orbitals.size(); ia++) {
+      const auto &psi_a = wf.core_orbitals[ia];
+      for (std::size_t im = 0; im < v_basis.size(); im++) {
+        const auto &psi_m = v_basis[im];
+        double sum = 0;
+        std::size_t ib = 0;
+        for (const auto &psi_b : wf.core_orbitals) {
+          std::size_t in = 0;
+          for (const auto &psi_n : v_basis) {
+            auto f =
+                -(1. / 3.) * pow(-1, (psi_b.twoj() - psi_n.twoj()) / 2 + 1);
+            auto Zanmb = cint.calculate_Z_abcdk(psi_a, psi_n, psi_m, psi_b, 1);
+            auto Zabmn = cint.calculate_Z_abcdk(psi_a, psi_b, psi_m, psi_n, 1);
+            auto t_bn = t_am[ib][in];
+            auto t_nb = pow(-1, (psi_n.twoj() - psi_b.twoj()) / 2) * t_bn;
+            auto A = t_bn * Zanmb / (psi_b.en - psi_n.en - omega);
+            auto B = t_nb * Zabmn / (psi_b.en - psi_n.en + omega);
+            // std::cout << A << " " << B << "\n";
+            sum += f * (A + B);
+            ++in;
+          }
+          ++ib;
+        }
+        // auto tam_old = t_am[ia][im];
+        // t_am[ia][im] = tam_old + 0.5 * sum;
+        t_am[ia][im] = t0_am[ia][im] + sum;
+        if (fabs(sum) > max)
+          max = fabs(sum);
+        // std::cout << tam_old << " " << tam_old + sum << " " << sum / tam_old
+        //           << "\n";
+      }
+    }
+    std::cout << max << "\n";
+
+    // valence:
+    {
+      double sum = 0;
+      std::size_t ia = 0;
+      for (const auto &psi_a : wf.core_orbitals) {
+        std::size_t im = 0;
+        for (const auto &psi_m : v_basis) {
+          auto f = -(1. / 3.) * pow(-1, (psi_a.twoj() - psi_m.twoj()) / 2 + 1);
+          auto Zwmva = cint.calculate_Z_abcdk(psi_w, psi_m, psi_v, psi_a, 1);
+          auto Zwavm = cint.calculate_Z_abcdk(psi_w, psi_a, psi_v, psi_m, 1);
+          auto tt_am = t_am[ia][im];
+          auto tt_ma = pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2) * tt_am;
+          auto A = tt_am * Zwmva / (psi_a.en - psi_m.en - omega);
+          auto B = tt_ma * Zwavm / (psi_a.en - psi_m.en + omega);
+          // std::cout << A << " " << B << "\n";
+          sum += f * (A + B);
+          ++im;
+        }
+        ++ia;
+      }
+      tvw_rpa = tvw_0 + sum;
+      std::cout << tvw_0 << " " << tvw_rpa << " " << sum / tvw_0 << "\n";
+    }
+  }
+  std::cout << sw.lap_reading_str() << "\n";
+
   // // cint.form_core_core();
-  // cint.form_core_valence();
+
   // // cint.form_valence_valence();
   //
   // for (const auto &psi_c : wf.core_orbitals) {

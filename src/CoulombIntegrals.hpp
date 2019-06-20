@@ -40,7 +40,13 @@ public: // functions
                                          const DiracSpinor &psi_b,
                                          const DiracSpinor &psi_c,
                                          const DiracSpinor &psi_d) const;
-
+  std::vector<double> calculate_X_abcd_k(const DiracSpinor &psi_a,
+                                         const DiracSpinor &psi_b,
+                                         const DiracSpinor &psi_c,
+                                         const DiracSpinor &psi_d) const;
+  double calculate_Z_abcdk(const DiracSpinor &psi_a, const DiracSpinor &psi_b,
+                           const DiracSpinor &psi_c, const DiracSpinor &psi_d,
+                           int k) const;
   // getters
   double get_angular_C_kiakibk(const DiracSpinor &phi_a,
                                const DiracSpinor &phi_b, int k) const;
