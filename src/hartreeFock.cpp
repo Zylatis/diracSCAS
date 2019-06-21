@@ -259,7 +259,7 @@ int main(int argc, char *argv[]) {
   bool test_hf_basis = true;
   std::vector<DiracSpinor> v_basis;
   if (test_hf_basis) {
-    auto basis_lst = wf.listOfStates_nk(15, 2);
+    auto basis_lst = wf.listOfStates_nk(2, 4);
     for (const auto &nk : basis_lst) {
       v_basis.emplace_back(DiracSpinor(nk[0], nk[1], wf.rgrid));
       auto tmp_vex = std::vector<double>{};
@@ -279,10 +279,9 @@ int main(int argc, char *argv[]) {
   E1Operator he1(wf.rgrid);
 
   std::vector<std::vector<double>> t0_am;
-  t0_am.reserve(wf.core_orbitals.size());
+  std::vector<std::vector<double>> t0_ma;
   for (const auto &psi_a : wf.core_orbitals) {
     std::vector<double> t0a_m;
-    t0a_m.reserve(v_basis.size());
     for (const auto &psi_m : v_basis) {
       auto radInt = psi_a * (he1 * psi_m);
       auto Cc = Wigner::Ck_kk(1, psi_a.k, psi_m.k);
@@ -290,7 +289,91 @@ int main(int argc, char *argv[]) {
     }
     t0_am.push_back(t0a_m);
   }
+  for (const auto &psi_m : v_basis) {
+    std::vector<double> t0m_a;
+    for (const auto &psi_a : wf.core_orbitals) {
+      auto radInt = psi_a * (he1 * psi_m);
+      auto C2 = Wigner::Ck_kk(1, psi_m.k, psi_a.k);
+      t0m_a.push_back(radInt * C2);
+    }
+    t0_ma.push_back(t0m_a);
+  }
   auto t_am = t0_am;
+  auto t_ma = t0_ma;
+
+  sw.start();
+  std::vector<std::vector<std::vector<std::vector<double>>>> Zanmb;
+  std::vector<std::vector<std::vector<std::vector<double>>>> Zabmn;
+  Zanmb.resize(wf.core_orbitals.size());
+  Zabmn.resize(wf.core_orbitals.size());
+// for (const auto &psi_a : wf.core_orbitals) {
+#pragma omp parallel for
+  for (std::size_t i = 0; i < wf.core_orbitals.size(); i++) {
+    const auto &psi_a = wf.core_orbitals[i];
+    std::vector<std::vector<std::vector<double>>> Za_nmb;
+    std::vector<std::vector<std::vector<double>>> Za_bmn;
+    Za_nmb.reserve(v_basis.size());
+    Za_bmn.reserve(v_basis.size());
+    for (const auto &psi_n : v_basis) {
+      std::vector<std::vector<double>> Zan_mb;
+      std::vector<std::vector<double>> Zab_mn;
+      Zan_mb.reserve(v_basis.size());
+      Zab_mn.reserve(v_basis.size());
+      for (const auto &psi_m : v_basis) {
+        std::vector<double> Zanm_b;
+        std::vector<double> Zabm_n;
+        Zanm_b.reserve(wf.core_orbitals.size());
+        Zabm_n.reserve(wf.core_orbitals.size());
+        for (const auto &psi_b : wf.core_orbitals) {
+          auto x = cint.calculate_Z_abcdk(psi_a, psi_n, psi_m, psi_b, 1);
+          auto y = cint.calculate_Z_abcdk(psi_a, psi_b, psi_m, psi_n, 1);
+          Zanm_b.push_back(x);
+          Zabm_n.push_back(y);
+        }
+        Zan_mb.push_back(Zanm_b);
+        Zab_mn.push_back(Zabm_n);
+      }
+      Za_nmb.push_back(Zan_mb);
+      Za_bmn.push_back(Zab_mn);
+    }
+    Zanmb[i] = Za_nmb;
+    Zabmn[i] = Za_bmn;
+  }
+
+  std::vector<std::vector<std::vector<std::vector<double>>>> Zmnab;
+  std::vector<std::vector<std::vector<std::vector<double>>>> Zmban;
+  Zmnab.resize(v_basis.size());
+  Zmban.resize(v_basis.size());
+// for (const auto &psi_a : wf.core_orbitals) {
+#pragma omp parallel for
+  for (std::size_t i = 0; i < v_basis.size(); i++) {
+    const auto &psi_m = v_basis[i];
+    std::vector<std::vector<std::vector<double>>> Za_nmb;
+    std::vector<std::vector<std::vector<double>>> Za_bmn;
+    for (const auto &psi_n : v_basis) {
+      std::vector<std::vector<double>> Zan_mb;
+      std::vector<std::vector<double>> Zab_mn;
+      for (const auto &psi_a : wf.core_orbitals) {
+        std::vector<double> Zanm_b;
+        std::vector<double> Zabm_n;
+        for (const auto &psi_b : wf.core_orbitals) {
+          auto x = cint.calculate_Z_abcdk(psi_m, psi_n, psi_a, psi_b, 1);
+          auto y = cint.calculate_Z_abcdk(psi_m, psi_b, psi_a, psi_n, 1);
+          Zanm_b.push_back(x);
+          Zabm_n.push_back(y);
+        }
+        Zan_mb.push_back(Zanm_b);
+        Zab_mn.push_back(Zabm_n);
+      }
+      Za_nmb.push_back(Zan_mb);
+      Za_bmn.push_back(Zab_mn);
+    }
+    Zmnab[i] = Za_nmb;
+    Zmban[i] = Za_bmn;
+  }
+
+  std::cout << sw.lap_reading_str() << " ok\n";
+  // std::cin.get();
 
   const auto &psi_v = wf.valence_orbitals[0];
   const auto &psi_w = wf.valence_orbitals[1];
@@ -298,38 +381,44 @@ int main(int argc, char *argv[]) {
   double tvw_0 = Wigner::Ck_kk(1, psi_v.k, psi_w.k) * (psi_v * (he1 * psi_w));
   double tvw_rpa = tvw_0;
 
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 1; i++) {
     double max = 0;
     for (std::size_t ia = 0; ia < wf.core_orbitals.size(); ia++) {
-      const auto &psi_a = wf.core_orbitals[ia];
       for (std::size_t im = 0; im < v_basis.size(); im++) {
-        const auto &psi_m = v_basis[im];
-        double sum = 0;
+        double sum_am = 0;
+        double sum_ma = 0;
         std::size_t ib = 0;
         for (const auto &psi_b : wf.core_orbitals) {
           std::size_t in = 0;
           for (const auto &psi_n : v_basis) {
             auto f =
                 -(1. / 3.) * pow(-1, (psi_b.twoj() - psi_n.twoj()) / 2 + 1);
-            auto Zanmb = cint.calculate_Z_abcdk(psi_a, psi_n, psi_m, psi_b, 1);
-            auto Zabmn = cint.calculate_Z_abcdk(psi_a, psi_b, psi_m, psi_n, 1);
+            auto zanmb = Zanmb[ia][in][im][ib];
+            auto zabmn = Zabmn[ia][in][im][ib];
+            auto zmnab = Zmnab[im][in][ia][ib];
+            auto zmban = Zmban[im][in][ia][ib];
             auto t_bn = t_am[ib][in];
             auto t_nb = pow(-1, (psi_n.twoj() - psi_b.twoj()) / 2) * t_bn;
-            auto A = t_bn * Zanmb / (psi_b.en - psi_n.en - omega);
-            auto B = t_nb * Zabmn / (psi_b.en - psi_n.en + omega);
-            // std::cout << A << " " << B << "\n";
-            sum += f * (A + B);
+            // auto t_nb = t_ma[in][ib];
+            auto A = t_bn * zanmb / (psi_b.en - psi_n.en - omega);
+            auto B = t_nb * zabmn / (psi_b.en - psi_n.en + omega);
+            auto C = t_bn * zmnab / (psi_b.en - psi_n.en - omega);
+            auto D = t_nb * zmban / (psi_b.en - psi_n.en + omega);
+            sum_am += f * (A + B);
+            sum_ma += f * (C + D);
             ++in;
           }
           ++ib;
         }
-        // auto tam_old = t_am[ia][im];
-        // t_am[ia][im] = tam_old + 0.5 * sum;
-        t_am[ia][im] = t0_am[ia][im] + sum;
-        if (fabs(sum) > max)
-          max = fabs(sum);
-        // std::cout << tam_old << " " << tam_old + sum << " " << sum / tam_old
-        //           << "\n";
+        t_am[ia][im] = t0_am[ia][im] + sum_am;
+        t_ma[im][ia] = t0_ma[im][ia] + sum_ma;
+        // auto &psi_m = v_basis[im];
+        // auto &psi_a = wf.core_orbitals[ia];
+        // std::cout << t_am[ia][im] * pow(-1, (psi_m.twoj() - psi_a.twoj()) /
+        // 2)
+        //           << " " << t_ma[im][ia] << "\n";
+        if (fabs(sum_am) > max)
+          max = fabs(sum_am);
       }
     }
     std::cout << max << "\n";
@@ -341,24 +430,51 @@ int main(int argc, char *argv[]) {
       for (const auto &psi_a : wf.core_orbitals) {
         std::size_t im = 0;
         for (const auto &psi_m : v_basis) {
+          // for (const auto &basis : {wf.core_orbitals, v_basis}) {
+          //   for (const auto &psi_m : basis) {
           auto f = -(1. / 3.) * pow(-1, (psi_a.twoj() - psi_m.twoj()) / 2 + 1);
           auto Zwmva = cint.calculate_Z_abcdk(psi_w, psi_m, psi_v, psi_a, 1);
           auto Zwavm = cint.calculate_Z_abcdk(psi_w, psi_a, psi_v, psi_m, 1);
           auto tt_am = t_am[ia][im];
-          auto tt_ma = pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2) * tt_am;
+          // auto tt_ma = pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2) * tt_am;
+          auto tt_ma = t_ma[im][ia];
           auto A = tt_am * Zwmva / (psi_a.en - psi_m.en - omega);
           auto B = tt_ma * Zwavm / (psi_a.en - psi_m.en + omega);
           // std::cout << A << " " << B << "\n";
+          {
+            // auto &psi_m = v_basis[im];
+            // auto &psi_a = wf.core_orbitals[ia];
+            std::cout << psi_m.symbol() << "|" << psi_a.symbol() << ": ";
+            // std::cout << t_am[ia][im] *
+            //                  pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2)
+            //           << " " << t_ma[im][ia] << "\n";
+            printf("%11.4e, %11.4e, d=%8.1e\n",
+                   t_am[ia][im] * pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2),
+                   t_ma[im][ia],
+                   t_am[ia][im] * pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2) -
+                       t_ma[im][ia]);
+          }
           sum += f * (A + B);
           ++im;
         }
+        std::cout << "\n";
+        // }
         ++ia;
       }
+      std::cout << "\n";
       tvw_rpa = tvw_0 + sum;
       std::cout << tvw_0 << " " << tvw_rpa << " " << sum / tvw_0 << "\n";
     }
   }
   std::cout << sw.lap_reading_str() << "\n";
+
+  /*
+  21/6/19
+   - There seems to be an issue, <a||r||m> != s <m||r||a>
+   - (Is true for most, but not all!)
+   - At least in some cases, seems to be a sign error!
+   - Wrong sign for s/d_3/2 integrals? But these so small anyway
+  */
 
   // // cint.form_core_core();
 

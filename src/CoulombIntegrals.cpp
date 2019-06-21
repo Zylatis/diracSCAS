@@ -374,7 +374,7 @@ Coulomb::calculate_X_abcd_k(const DiracSpinor &psi_a, const DiracSpinor &psi_b,
   for (int k = kmin; k <= kmax; k++) {
     // sign: (-1)^{ja+0.5} * (-1)^{jb+0.5} * (-1)^k
     //       = (-1)^{ja + jb + k + 1}
-    auto sign = (japjbp1 + k % 2 == 0) ? 1 : -1;
+    auto sign = ((japjbp1 + k) % 2 == 0) ? 1 : -1;
     tmp_X[k] *= (sign * C_ac[k - kmin] * C_bd[k - kmin]);
     ++k;
   }
