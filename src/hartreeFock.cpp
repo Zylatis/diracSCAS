@@ -259,7 +259,7 @@ int main(int argc, char *argv[]) {
   bool test_hf_basis = true;
   std::vector<DiracSpinor> v_basis;
   if (test_hf_basis) {
-    auto basis_lst = wf.listOfStates_nk(2, 4);
+    auto basis_lst = wf.listOfStates_nk(10, 2);
     for (const auto &nk : basis_lst) {
       v_basis.emplace_back(DiracSpinor(nk[0], nk[1], wf.rgrid));
       auto tmp_vex = std::vector<double>{};
@@ -272,6 +272,7 @@ int main(int argc, char *argv[]) {
 
   Coulomb cint(wf.core_orbitals, v_basis);
   cint.form_core_valence();
+  cint.form_valence_valence();
 
   ChronoTimer sw;
   sw.start();
@@ -325,7 +326,10 @@ int main(int argc, char *argv[]) {
         Zanm_b.reserve(wf.core_orbitals.size());
         Zabm_n.reserve(wf.core_orbitals.size());
         for (const auto &psi_b : wf.core_orbitals) {
+          // here?? {n,a} wring way in first ??
           auto x = cint.calculate_Z_abcdk(psi_a, psi_n, psi_m, psi_b, 1);
+          // Here, there is a val-cal Coulomb int... why?
+          // auto y = cint.calculate_Z_abcdk(psi_m, psi_b, psi_a, psi_n, 1);
           auto y = cint.calculate_Z_abcdk(psi_a, psi_b, psi_m, psi_n, 1);
           Zanm_b.push_back(x);
           Zabm_n.push_back(y);
@@ -357,7 +361,10 @@ int main(int argc, char *argv[]) {
         std::vector<double> Zanm_b;
         std::vector<double> Zabm_n;
         for (const auto &psi_b : wf.core_orbitals) {
+          // auto x = cint.calculate_Z_abcdk(psi_m, psi_n, psi_a, psi_b, 1);
+          // auto y = cint.calculate_Z_abcdk(psi_m, psi_b, psi_a, psi_n, 1);
           auto x = cint.calculate_Z_abcdk(psi_m, psi_n, psi_a, psi_b, 1);
+          // auto y = cint.calculate_Z_abcdk(psi_a, psi_b, psi_m, psi_n, 1);
           auto y = cint.calculate_Z_abcdk(psi_m, psi_b, psi_a, psi_n, 1);
           Zanm_b.push_back(x);
           Zabm_n.push_back(y);
@@ -377,7 +384,7 @@ int main(int argc, char *argv[]) {
 
   const auto &psi_v = wf.valence_orbitals[0];
   const auto &psi_w = wf.valence_orbitals[1];
-  double omega = fabs(psi_v.en - psi_w.en);
+  double omega = 0.0; // fabs(psi_v.en - psi_w.en);
   double tvw_0 = Wigner::Ck_kk(1, psi_v.k, psi_w.k) * (psi_v * (he1 * psi_w));
   double tvw_rpa = tvw_0;
 
@@ -391,32 +398,30 @@ int main(int argc, char *argv[]) {
         for (const auto &psi_b : wf.core_orbitals) {
           std::size_t in = 0;
           for (const auto &psi_n : v_basis) {
-            auto f =
-                -(1. / 3.) * pow(-1, (psi_b.twoj() - psi_n.twoj()) / 2 + 1);
+            auto s1 = ((psi_b.twoj() - psi_n.twoj() + 2) % 4 == 0) ? 1 : -1;
+            auto s2 = (2 % 4 == 0) ? 1 : -1;
+            auto f = (-1. / 3.);
+            // pow(-1, (psi_b.twoj() - psi_n.twoj()) / 2 + 1);
             auto zanmb = Zanmb[ia][in][im][ib];
             auto zabmn = Zabmn[ia][in][im][ib];
             auto zmnab = Zmnab[im][in][ia][ib];
             auto zmban = Zmban[im][in][ia][ib];
             auto t_bn = t_am[ib][in];
-            auto t_nb = pow(-1, (psi_n.twoj() - psi_b.twoj()) / 2) * t_bn;
+            auto s2t = ((psi_n.twoj() - psi_n.twoj()) % 4 == 0) ? 1 : -1;
+            auto t_nb = s2t * t_bn;
             // auto t_nb = t_ma[in][ib];
             auto A = t_bn * zanmb / (psi_b.en - psi_n.en - omega);
             auto B = t_nb * zabmn / (psi_b.en - psi_n.en + omega);
             auto C = t_bn * zmnab / (psi_b.en - psi_n.en - omega);
             auto D = t_nb * zmban / (psi_b.en - psi_n.en + omega);
-            sum_am += f * (A + B);
-            sum_ma += f * (C + D);
+            sum_am += f * (s1 * A + s1 * B);
+            sum_ma += f * (s1 * C + s1 * D);
             ++in;
           }
           ++ib;
         }
         t_am[ia][im] = t0_am[ia][im] + sum_am;
         t_ma[im][ia] = t0_ma[im][ia] + sum_ma;
-        // auto &psi_m = v_basis[im];
-        // auto &psi_a = wf.core_orbitals[ia];
-        // std::cout << t_am[ia][im] * pow(-1, (psi_m.twoj() - psi_a.twoj()) /
-        // 2)
-        //           << " " << t_ma[im][ia] << "\n";
         if (fabs(sum_am) > max)
           max = fabs(sum_am);
       }
@@ -425,36 +430,33 @@ int main(int argc, char *argv[]) {
 
     // valence:
     {
+      cint.form_valence_valence(); // XXXX
+      // cint.form_valence_valence();
       double sum = 0;
       std::size_t ia = 0;
       for (const auto &psi_a : wf.core_orbitals) {
         std::size_t im = 0;
         for (const auto &psi_m : v_basis) {
-          // for (const auto &basis : {wf.core_orbitals, v_basis}) {
-          //   for (const auto &psi_m : basis) {
-          auto f = -(1. / 3.) * pow(-1, (psi_a.twoj() - psi_m.twoj()) / 2 + 1);
+          auto s1 = ((psi_a.twoj() - psi_m.twoj() + 2) % 4 == 0) ? 1 : -1;
+          auto s2 = (2 % 4 == 0) ? 1 : -1;
+          auto f = (-1. / 3.);
+          // auto Zwmva = cint.calculate_Z_abcdk(psi_w, psi_a, psi_m, psi_v, 1);
           auto Zwmva = cint.calculate_Z_abcdk(psi_w, psi_m, psi_v, psi_a, 1);
+          // auto Zwavm = cint.calculate_Z_abcdk(psi_v, psi_a, psi_w, psi_m, 1);
           auto Zwavm = cint.calculate_Z_abcdk(psi_w, psi_a, psi_v, psi_m, 1);
           auto tt_am = t_am[ia][im];
-          // auto tt_ma = pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2) * tt_am;
-          auto tt_ma = t_ma[im][ia];
+          auto s2t = ((psi_a.twoj() - psi_m.twoj()) % 4 == 0) ? 1 : -1;
+          auto tt_ma = s2t * tt_am;
+          // auto tt_ma = t_ma[im][ia];
+          // auto tt_am = s2t * tt_ma;
           auto A = tt_am * Zwmva / (psi_a.en - psi_m.en - omega);
           auto B = tt_ma * Zwavm / (psi_a.en - psi_m.en + omega);
-          // std::cout << A << " " << B << "\n";
           {
-            // auto &psi_m = v_basis[im];
-            // auto &psi_a = wf.core_orbitals[ia];
             std::cout << psi_m.symbol() << "|" << psi_a.symbol() << ": ";
-            // std::cout << t_am[ia][im] *
-            //                  pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2)
-            //           << " " << t_ma[im][ia] << "\n";
-            printf("%11.4e, %11.4e, d=%8.1e\n",
-                   t_am[ia][im] * pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2),
-                   t_ma[im][ia],
-                   t_am[ia][im] * pow(-1, (psi_m.twoj() - psi_a.twoj()) / 2) -
-                       t_ma[im][ia]);
+            printf("%11.4e, %11.4e, d=%8.1e\n", t_am[ia][im] * s1, t_ma[im][ia],
+                   (t_am[ia][im] * s1 - t_ma[im][ia]) / t_am[ia][im]);
           }
-          sum += f * (A + B);
+          sum += f * (s1 * A + s1 * B);
           ++im;
         }
         std::cout << "\n";
@@ -463,7 +465,7 @@ int main(int argc, char *argv[]) {
       }
       std::cout << "\n";
       tvw_rpa = tvw_0 + sum;
-      std::cout << tvw_0 << " " << tvw_rpa << " " << sum / tvw_0 << "\n";
+      std::cout << tvw_0 << " " << tvw_rpa << " " << sum << "\n";
     }
   }
   std::cout << sw.lap_reading_str() << "\n";

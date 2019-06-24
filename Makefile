@@ -8,7 +8,7 @@ CXX=g++
 # CXX=clang++
 
 OPT=-O3
-OMP=-fopenmp
+OMP=#-fopenmp
 
 WARN=-Wpedantic -Wall -Wextra -Wdouble-promotion -Wconversion
 # -fmax-errors=n # useful when changing a lot
