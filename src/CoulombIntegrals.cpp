@@ -247,7 +247,7 @@ void Coulomb::calculate_angular(int ki)
 // Lambda^k_ij := 3js((ji,jj,k),(-1/2,1/2,0))^2 * parity(li+lj+k)
 // C \propto <k||C^k||k'> , but missing (-1)^{ja+1/2} factor!
 //   = Sqrt([ji][jj]) * 3js((ji,jj,k),(-1/2,1/2,0)) * parity(li+lj+k)
-// Note: C is abs value) - if sign needed, do seperately [sign NOT symmetric!]
+// Note: C missing (-1)^.. - if sign needed, do seperately [sign NOT symmetric!]
 // Also:
 // k_min = |j - j'|; k_max = |j + j'|
 // num_k = (j' + 1) if j>j', (j + 1) if j'>j;
@@ -273,6 +273,9 @@ void Coulomb::calculate_angular(int ki)
           continue;
         int ik = k - kmin;
         auto tjs = Wigner::threej_2(tja, tjb, 2 * k, -1, 1, 0);
+        // auto tjs_tmp = Wigner::threej_2(tjb, tja, 2 * k, -1, 1, 0);
+        // std::cerr << "XXX: " << tjs << " " << tjs_tmp << " " << tjs / tjs_tmp
+        //           << "\n";
         C_k[ik] = sqrt((tja + 1) * (tjb + 1)) * tjs; // nb: no sign!
         // XXX NOTE: NO! This is NOT absolute value! But, is it symmetric?
         // Yes, it is symmetric
@@ -337,7 +340,6 @@ std::vector<double> Coulomb::calculate_R_abcd_k(const DiracSpinor &psi_a,
 // Symmetry: a<->c, and b<->d
 // NOTE: NOT offset by k_min, so will calculate for k=0,1,2,...,k_max
 {
-  // std::cerr << "_^_" << __LINE__ << "\n ";
 
   auto kmin = abs(psi_b.twoj() - psi_d.twoj()) / 2;
   auto kmax = abs(psi_b.twoj() + psi_d.twoj()) / 2;
@@ -352,21 +354,13 @@ std::vector<double> Coulomb::calculate_R_abcd_k(const DiracSpinor &psi_a,
   // So, will be equally as fast with nRVO
   std::vector<double> Rabcd(kmax + 1, 0);
 
-  // std::cerr << "_^_" << __LINE__ << "\n ";
   const auto &ybd_kr = get_y_ijk(psi_b, psi_d);
-  // std::cerr << "ybd_kr.size()=" << ybd_kr.size() << "\n";
-  // std::cerr << "_^_" << __LINE__ << "\n ";
   for (int k = kmin; k <= kmax; k++) {
-    // std::cerr << k << " " << kmin << " " << kmax << " " << ybd_kr.size()
-    // << "\n";
     const auto &ybdk_r = ybd_kr[k - kmin];
-    // std::cerr << "got it?\n";
-    // std::cerr << "..R " << Rabcd.size() << "\n";
     auto ffy = NumCalc::integrate(psi_a.f, psi_c.f, ybdk_r, drdu, 1, 0, pinf);
     auto ggy = NumCalc::integrate(psi_a.g, psi_c.g, ybdk_r, drdu, 1, 0, pinf);
     Rabcd[k] = (ffy + ggy) * du;
   }
-  // std::cerr << "_^_" << __LINE__ << "\n ";
   return Rabcd;
 }
 
@@ -376,27 +370,34 @@ std::vector<double> Coulomb::calculate_X_abcd_k(const DiracSpinor &psi_a,
                                                 const DiracSpinor &psi_c,
                                                 const DiracSpinor &psi_d) const
 // X^k_mnab := (-1)^k * <m||C^k||a> * <n||C^k||b> * R^k_mnab
+// X^k_abcd := (-1)^k * <a||C^k||c> * <b||C^k||d> * R^k_abcd
+// <m||C^k||a> = (-1)^{j_m + 0.5} C
 // Eq. (7.38) Johnson
 {
   // tmp_X is NOT offset by kmin
 
   auto tmp_X = calculate_R_abcd_k(psi_a, psi_b, psi_c, psi_d);
-  auto kmax = abs(psi_b.twoj() + psi_d.twoj()) / 2;
+  auto kmax_bd = abs(psi_b.twoj() + psi_d.twoj()) / 2;
+  auto kmax_ac = abs(psi_a.twoj() + psi_c.twoj()) / 2;
   // C IS offset by kmin
-  auto kmin = abs(psi_b.twoj() - psi_d.twoj()) / 2;
+  auto kmin_ac = abs(psi_a.twoj() - psi_c.twoj()) / 2;
+  auto kmin_bd = abs(psi_b.twoj() - psi_d.twoj()) / 2;
   auto C_ac = get_angular_C_kiakib_k(psi_a.k_index(), psi_c.k_index());
   auto C_bd = get_angular_C_kiakib_k(psi_b.k_index(), psi_d.k_index());
 
-  // auto japjbp1 = (psi_a.twoj() + psi_b.twoj()) / 2 + 1;
+  // std::cout << "kmin_xx: " << kmin_ac << " " << kmin_bd << "\n";
+  // std::cout << "kmax_xx: " << kmax_ac << " " << kmax_bd << "\n";
+  auto kmin = std::min(kmin_bd, kmin_ac);
+  auto kmax = std::min(kmax_bd, kmax_ac);
+
   auto two_japjbp1 = (psi_a.twoj() + psi_b.twoj()) + 2;
   for (int k = kmin; k <= kmax; k++) {
-    // sign: (-1)^{ja+0.5} * (-1)^{jb+0.5} * (-1)^k
-    //       = (-1)^{ja + jb + k + 1}
     auto sign = (two_japjbp1 + (2 * k)) % 4 == 0 ? 1 : -1;
-    // auto sign2 = ((japjbp1 + k) % 2 == 0) ? 1 : -1;
-    // std::cerr << sign / sign2 << "\n";
-    tmp_X[k] *= (sign * C_ac[k - kmin] * C_bd[k - kmin]);
+    tmp_X[k] *= (sign * C_ac[k - kmin_ac] * C_bd[k - kmin_bd]);
     ++k;
+  }
+  for (int k = kmax + 1; k < (int)tmp_X.size(); k++) {
+    tmp_X[k] = 0; // should already be zero! (?)
   }
 
   return tmp_X;
@@ -416,35 +417,30 @@ double Coulomb::calculate_Z_abcdk(const DiracSpinor &psi_a,
   auto tjc = psi_c.twoj();
   auto tjd = psi_d.twoj();
 
-  // auto Xabcd = calculate_X_abcd_k(psi_a, psi_b, psi_c, psi_d);//XX
-  // std::cerr << __LINE__ << "\n ";
-  auto Xabcd_1 = calculate_X_abcd_k(psi_a, psi_b, psi_c, psi_d); // only need
-  // std::cerr << __LINE__ << "\n ";
-  // for (auto &phi : {psi_a, psi_b, psi_d, psi_c})
-  //   std::cout << phi.symbol() << ", ";
-  // std::cout << " (Z)\n";
-  // auto Xabcd_2 = calculate_X_abcd_k(psi_a, psi_b, psi_d, psi_c);
+  auto Xabcd_1 = calculate_X_abcd_k(psi_a, psi_b, psi_c, psi_d);
+  auto kmax = Xabcd_1.size() + 1; //(tjb + tjd) / 2;
+  // XXX for Xabcd_1, only need k=k term!
   auto Xabcd_2 = calculate_X_abcd_k(psi_a, psi_b, psi_d, psi_c);
-  // std::cerr << __LINE__ << "\n ";
-  auto kmax = (tjb + tjd) / 2;
-  // auto kmax_2 = (tjb + tjc) / 2;
-  // std::cerr << k << " " << kmax << " " << abs(tjb + tjc) / 2 << "\n";
 
-  if (k > kmax)
-    return 0;
-  // XXX Correct?
+  // auto kmax_2 = (tjb + tjc) / 2;
+  // auto kmax_3 = (tja + tjd) / 2;
+
+  if (k > (int)kmax) {
+    std::cout << k << " " << kmax << "\n";
+    // return 0;
+    // XXX Correct?
+  }
 
   double sum = 0.0;
-  int ll = 0; // XXX X is NOT offset (prob should be..?)
+  int ll = 0;
   for (const auto &x : Xabcd_2) {
     auto sj = Wigner::sixj_2(tjc, tja, 2 * k, tjd, tjb, 2 * ll);
-    // auto sj = Wigner::sixj_2(tja, tjc, 2 * k, tjb, tjd, 2 * ll);
     sum += sj * x;
     ++ll;
   }
 
-  // if (k > kmax)
-  //   return (2 * k + 1) * sum;
+  if (k > (int)kmax)
+    return (2 * k + 1) * sum;
   return Xabcd_1[k] + (2 * k + 1) * sum;
 }
 //******************************************************************************
