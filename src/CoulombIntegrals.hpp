@@ -30,6 +30,11 @@ public: // constructor + static functions
                               const DiracSpinor &phi_b, const int k,
                               std::vector<double> &vabk);
 
+  static double calc_Zabcdk_scratch(const DiracSpinor &psi_a,
+                                    const DiracSpinor &psi_b,
+                                    const DiracSpinor &psi_c,
+                                    const DiracSpinor &psi_d, int k);
+
 public: // functions
   void form_core_core();
   void form_valence_valence();
@@ -40,10 +45,21 @@ public: // functions
                                          const DiracSpinor &psi_b,
                                          const DiracSpinor &psi_c,
                                          const DiracSpinor &psi_d) const;
+  double calculate_Rk_abcd(const DiracSpinor &psi_a, const DiracSpinor &psi_b,
+                           const DiracSpinor &psi_c, const DiracSpinor &psi_d,
+                           int k) const;
+  static std::vector<double> calculate_y_ijk(const DiracSpinor &phi_a,
+                                             const DiracSpinor &phi_b,
+                                             const int k);
+
   std::vector<double> calculate_X_abcd_k(const DiracSpinor &psi_a,
                                          const DiracSpinor &psi_b,
                                          const DiracSpinor &psi_c,
                                          const DiracSpinor &psi_d) const;
+  double calculate_Xk_abcd(const DiracSpinor &psi_a, const DiracSpinor &psi_b,
+                           const DiracSpinor &psi_c, const DiracSpinor &psi_d,
+                           int k) const;
+
   double calculate_Z_abcdk(const DiracSpinor &psi_a, const DiracSpinor &psi_b,
                            const DiracSpinor &psi_c, const DiracSpinor &psi_d,
                            int k) const;

@@ -341,12 +341,14 @@ std::vector<double> Coulomb::calculate_R_abcd_k(const DiracSpinor &psi_a,
 // NOTE: NOT offset by k_min, so will calculate for k=0,1,2,...,k_max
 {
 
-  auto kmin = abs(psi_b.twoj() - psi_d.twoj()) / 2;
-  auto kmax = abs(psi_b.twoj() + psi_d.twoj()) / 2;
-  const auto &drdu = psi_a.p_rgrid->drdu; // save typing
+  auto kmin = abs(psi_b.twoj() - psi_d.twoj()) / 2; // used for off-set
+  auto kmax = abs(psi_b.twoj() + psi_d.twoj()) / 2; // to size array
+  const auto &drdu = psi_a.p_rgrid->drdu;           // save typing
   const auto du = psi_a.p_rgrid->du;
 
-  auto pinf = std::min(psi_a.pinf, psi_c.pinf);
+  // integration cut-off @ practical infinity
+  auto pinf = std::min(std::min(psi_a.pinf, psi_c.pinf),
+                       std::min(psi_b.pinf, psi_d.pinf));
 
   // For now, this returns. Later, might be faster to swap to in/out param!
   // (To avoid huge amount of re-alocating memory)
@@ -354,14 +356,60 @@ std::vector<double> Coulomb::calculate_R_abcd_k(const DiracSpinor &psi_a,
   // So, will be equally as fast with nRVO
   std::vector<double> Rabcd(kmax + 1, 0);
 
+  // Coulomb y function:
   const auto &ybd_kr = get_y_ijk(psi_b, psi_d);
+
+  // only do radial integral if angular factor(s) are non-zero
+  auto LLk = [&](int k) {
+    return get_angular_L_kiakibk(psi_b, psi_d, k) *
+           get_angular_L_kiakibk(psi_a, psi_c, k);
+  };
+
   for (int k = kmin; k <= kmax; k++) {
+    if (LLk(k) == 0)
+      continue;
     const auto &ybdk_r = ybd_kr[k - kmin];
     auto ffy = NumCalc::integrate(psi_a.f, psi_c.f, ybdk_r, drdu, 1, 0, pinf);
     auto ggy = NumCalc::integrate(psi_a.g, psi_c.g, ybdk_r, drdu, 1, 0, pinf);
     Rabcd[k] = (ffy + ggy) * du;
   }
   return Rabcd;
+}
+
+//******************************************************************************
+double Coulomb::calculate_Rk_abcd(const DiracSpinor &psi_a,
+                                  const DiracSpinor &psi_b,
+                                  const DiracSpinor &psi_c,
+                                  const DiracSpinor &psi_d, int k) const
+// R^k_abcd = Int_0^inf [fa*fc + ga*gc]*y^k_bd(r) dr
+// Symmetry: a<->c, and b<->d
+// NOTE: NOT offset by k_min, so will calculate for k=0,1,2,...,k_max
+{
+
+  auto kmin = abs(psi_b.twoj() - psi_d.twoj()) / 2;
+  auto kmax = abs(psi_b.twoj() + psi_d.twoj()) / 2;
+  if (k < kmin || k > kmax)
+    return 0;
+
+  // only do radial integral if angular factor(s) are non-zero
+  auto LLk = [&](int k) {
+    return get_angular_L_kiakibk(psi_b, psi_d, k) *
+           get_angular_L_kiakibk(psi_a, psi_c, k);
+  };
+  if (LLk(k) == 0)
+    return 0;
+
+  const auto &drdu = psi_a.p_rgrid->drdu; // save typing
+  const auto du = psi_a.p_rgrid->du;
+
+  auto pinf = std::min(std::min(psi_a.pinf, psi_b.pinf),
+                       std::min(psi_c.pinf, psi_d.pinf));
+
+  const auto &ybdk_r = get_y_ijk(psi_b, psi_d, k);
+
+  auto ffy = NumCalc::integrate(psi_a.f, psi_c.f, ybdk_r, drdu, 1, 0, pinf);
+  auto ggy = NumCalc::integrate(psi_a.g, psi_c.g, ybdk_r, drdu, 1, 0, pinf);
+  return (ffy + ggy) * du;
 }
 
 //******************************************************************************
@@ -374,34 +422,50 @@ std::vector<double> Coulomb::calculate_X_abcd_k(const DiracSpinor &psi_a,
 // <m||C^k||a> = (-1)^{j_m + 0.5} C
 // Eq. (7.38) Johnson
 {
-  // tmp_X is NOT offset by kmin
+  // tmp_X [and thus X] is NOT offset by kmin
 
   auto tmp_X = calculate_R_abcd_k(psi_a, psi_b, psi_c, psi_d);
-  auto kmax_bd = abs(psi_b.twoj() + psi_d.twoj()) / 2;
-  auto kmax_ac = abs(psi_a.twoj() + psi_c.twoj()) / 2;
-  // C IS offset by kmin
-  auto kmin_ac = abs(psi_a.twoj() - psi_c.twoj()) / 2;
-  auto kmin_bd = abs(psi_b.twoj() - psi_d.twoj()) / 2;
-  auto C_ac = get_angular_C_kiakib_k(psi_a.k_index(), psi_c.k_index());
-  auto C_bd = get_angular_C_kiakib_k(psi_b.k_index(), psi_d.k_index());
 
-  // std::cout << "kmin_xx: " << kmin_ac << " " << kmin_bd << "\n";
-  // std::cout << "kmax_xx: " << kmax_ac << " " << kmax_bd << "\n";
-  auto kmin = std::min(kmin_bd, kmin_ac);
-  auto kmax = std::min(kmax_bd, kmax_ac);
-
-  auto two_japjbp1 = (psi_a.twoj() + psi_b.twoj()) + 2;
-  for (int k = kmin; k <= kmax; k++) {
-    auto sign = (two_japjbp1 + (2 * k)) % 4 == 0 ? 1 : -1;
-    tmp_X[k] *= (sign * C_ac[k - kmin_ac] * C_bd[k - kmin_bd]);
-    ++k;
-  }
-  for (int k = kmax + 1; k < (int)tmp_X.size(); k++) {
-    tmp_X[k] = 0; // should already be zero! (?)
+  auto tmp_2_jajbp1 = psi_a.twoj() + psi_b.twoj() + 2;
+  for (int k = 0; k < (int)tmp_X.size(); k++) {
+    auto power = (tmp_2_jajbp1 / 2) + k;
+    auto C_ac_k = get_angular_C_kiakibk(psi_a, psi_c, k); // slowish
+    auto C_bd_k = get_angular_C_kiakibk(psi_b, psi_d, k);
+    auto sign = (power % 2 == 0) ? 1 : -1;
+    tmp_X[k] *= (sign * C_ac_k * C_bd_k);
   }
 
   return tmp_X;
 }
+
+//******************************************************************************
+double Coulomb::calculate_Xk_abcd(const DiracSpinor &psi_a,
+                                  const DiracSpinor &psi_b,
+                                  const DiracSpinor &psi_c,
+                                  const DiracSpinor &psi_d, int k) const
+// X^k_mnab := (-1)^k * <m||C^k||a> * <n||C^k||b> * R^k_mnab
+// X^k_abcd := (-1)^k * <a||C^k||c> * <b||C^k||d> * R^k_abcd
+// <m||C^k||a> = (-1)^{j_m + 0.5} C
+// X^k_abcd := (-1)^(k+j_a+j_b+1) * C_ac * C_bd * R^k_abcd
+// Eq. (7.38) Johnson
+// XXX Make function name same XXX
+// XXX Try to kill code duplication! XXX
+{
+
+  auto C_ac_k = get_angular_C_kiakibk(psi_a, psi_c, k);
+  auto C_bd_k = get_angular_C_kiakibk(psi_b, psi_d, k);
+  auto cck = C_ac_k * C_bd_k;
+  if (cck == 0)
+    return 0;
+
+  auto tmp_X = calculate_Rk_abcd(psi_a, psi_b, psi_c, psi_d, k);
+
+  auto power2 = psi_a.twoj() + psi_b.twoj() + 2 * (k + 1);
+  auto sign = (power2 % 4 == 0) ? 1 : -1;
+
+  return tmp_X * sign * cck;
+}
+
 //******************************************************************************
 double Coulomb::calculate_Z_abcdk(const DiracSpinor &psi_a,
                                   const DiracSpinor &psi_b,
@@ -417,32 +481,90 @@ double Coulomb::calculate_Z_abcdk(const DiracSpinor &psi_a,
   auto tjc = psi_c.twoj();
   auto tjd = psi_d.twoj();
 
-  auto Xabcd_1 = calculate_X_abcd_k(psi_a, psi_b, psi_c, psi_d);
-  auto kmax = Xabcd_1.size() + 1; //(tjb + tjd) / 2;
   // XXX for Xabcd_1, only need k=k term!
+  auto Xabcd_1 = calculate_Xk_abcd(psi_a, psi_b, psi_c, psi_d, k); // only k
   auto Xabcd_2 = calculate_X_abcd_k(psi_a, psi_b, psi_d, psi_c);
-
-  // auto kmax_2 = (tjb + tjc) / 2;
-  // auto kmax_3 = (tja + tjd) / 2;
-
-  if (k > (int)kmax) {
-    std::cout << k << " " << kmax << "\n";
-    // return 0;
-    // XXX Correct?
-  }
 
   double sum = 0.0;
   int ll = 0;
   for (const auto &x : Xabcd_2) {
-    auto sj = Wigner::sixj_2(tjc, tja, 2 * k, tjd, tjb, 2 * ll);
-    sum += sj * x;
+    if (x != 0) {
+      auto sj = Wigner::sixj_2(tjc, tja, 2 * k, tjd, tjb, 2 * ll);
+      sum += (sj * x);
+    }
     ++ll;
   }
 
-  if (k > (int)kmax)
-    return (2 * k + 1) * sum;
-  return Xabcd_1[k] + (2 * k + 1) * sum;
+  return Xabcd_1 + (2 * k + 1) * sum;
 }
+
+//******************************************************************************
+double Coulomb::calc_Zabcdk_scratch(const DiracSpinor &psi_a,
+                                    const DiracSpinor &psi_b,
+                                    const DiracSpinor &psi_c,
+                                    const DiracSpinor &psi_d, int k)
+// Z^k_mnab := X^k_mnab + \sum_l [k] * {ja jm k, jb jn l}*X^l_mnba
+// Z^k_abcd := X^k_abcd + \sum_l [k] * {jc ja k, jd jb l}*X^l_abdc
+// Equation (7.42) of Johnson
+// Note: swapped indices of last two on X^l
+{
+  const auto &drdu = psi_a.p_rgrid->drdu;
+  const auto du = psi_a.p_rgrid->du;
+  using namespace Wigner;
+  using namespace NumCalc;
+
+  auto ka = psi_a.k;
+  auto kb = psi_b.k;
+  auto kc = psi_c.k;
+  auto kd = psi_d.k;
+
+  auto tja = psi_a.twoj();
+  auto tjb = psi_b.twoj();
+  auto tjc = psi_c.twoj();
+  auto tjd = psi_d.twoj();
+
+  auto pinf = std::min(std::min(psi_a.pinf, psi_c.pinf),
+                       std::min(psi_b.pinf, psi_d.pinf));
+
+  int m1tk = k % 2 == 0 ? 1 : -1;
+
+  auto X_abcdk = Ck_kk(k, ka, kc) * Ck_kk(k, kb, kd) * m1tk;
+  if (X_abcdk != 0) {
+    auto yabk = calculate_y_ijk(psi_b, psi_d, k);
+    X_abcdk *= integrate(psi_a.f, psi_c.f, yabk, drdu, du, 0, pinf) +
+               integrate(psi_a.g, psi_c.g, yabk, drdu, du, 0, pinf);
+  }
+
+  double sum_ll = 0.0;
+  int lambda_max = std::min(tja + tjd, tjb + tjc) / 2;
+  for (int ll = 0; ll <= lambda_max; ll++) {
+    auto sj = sixj_2(tjc, tja, 2 * k, tjd, tjb, 2 * ll);
+    if (sj == 0)
+      continue;
+    int m1tl = ll % 2 == 0 ? 1 : -1;
+    auto CC_ll = Ck_kk(ll, ka, kd) * Ck_kk(ll, kb, kc) * m1tl;
+    if (CC_ll == 0)
+      continue;
+    // calc X:
+    auto yll = calculate_y_ijk(psi_b, psi_c, ll);
+    auto Xll = CC_ll * du *
+               (integrate(psi_a.f, psi_d.f, yll, drdu, 1, 0, pinf) +
+                integrate(psi_a.g, psi_d.g, yll, drdu, 1, 0, pinf));
+    sum_ll += (2 * k + 1) * sj * Xll;
+  }
+
+  return X_abcdk + sum_ll;
+}
+
+//******************************************************************************
+std::vector<double> Coulomb::calculate_y_ijk(const DiracSpinor &phi_a,
+                                             const DiracSpinor &phi_b,
+                                             const int k) {
+  std::vector<double> y;
+  calculate_y_ijk(phi_a, phi_b, k, y);
+  return y;
+}
+
 //******************************************************************************
 void Coulomb::calculate_y_ijk(const DiracSpinor &phi_a,
                               const DiracSpinor &phi_b, const int k,
@@ -496,47 +618,3 @@ void Coulomb::calculate_y_ijk(const DiracSpinor &phi_a,
     vabk[i] = 0; // this doesn't happen in psi_a = psi_b
   }
 }
-
-// //******************************************************************************
-// std::vector<std::vector<std::vector<std::vector<double>>>>
-// calculate_Zk_ijkl() {
-//   /*
-//    * How to do it? core-val-val-core ??
-//    * Core - both - val - both ??
-//    */
-//   Zanmb.resize(wf.core_orbitals.size());
-//   Zabmn.resize(wf.core_orbitals.size());
-// // for (const auto &psi_a : wf.core_orbitals) {
-// #pragma omp parallel for
-//   for (std::size_t i = 0; i < wf.core_orbitals.size(); i++) {
-//     const auto &psi_a = wf.core_orbitals[i];
-//     std::vector<std::vector<std::vector<double>>> Za_nmb;
-//     std::vector<std::vector<std::vector<double>>> Za_bmn;
-//     Za_nmb.reserve(v_basis.size());
-//     Za_bmn.reserve(v_basis.size());
-//     for (const auto &psi_n : v_basis) {
-//       std::vector<std::vector<double>> Zan_mb;
-//       std::vector<std::vector<double>> Zab_mn;
-//       Zan_mb.reserve(v_basis.size());
-//       Zab_mn.reserve(v_basis.size());
-//       for (const auto &psi_m : v_basis) {
-//         std::vector<double> Zanm_b;
-//         std::vector<double> Zabm_n;
-//         Zanm_b.reserve(wf.core_orbitals.size());
-//         Zabm_n.reserve(wf.core_orbitals.size());
-//         for (const auto &psi_b : wf.core_orbitals) {
-//           auto x = cint.calculate_Z_abcdk(psi_a, psi_n, psi_m, psi_b, 1);
-//           auto y = cint.calculate_Z_abcdk(psi_a, psi_b, psi_m, psi_n, 1);
-//           Zanm_b.push_back(x);
-//           Zabm_n.push_back(y);
-//         }
-//         Zan_mb.push_back(Zanm_b);
-//         Zab_mn.push_back(Zabm_n);
-//       }
-//       Za_nmb.push_back(Zan_mb);
-//       Za_bmn.push_back(Zab_mn);
-//     }
-//     Zanmb[i] = Za_nmb;
-//     Zabmn[i] = Za_bmn;
-//   }
-// }
