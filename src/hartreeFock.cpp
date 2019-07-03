@@ -150,21 +150,21 @@ int main(int argc, char *argv[]) {
     DiracOperator y(c * c, DiracMatrix(0, 0, 0, -2));
     DiracOperator z1(wf.vnuc);
     DiracOperator z2(wf.vdir);
-    bool tmp_valence = false;
     for (auto &tmp_orbs : {wf.core_orbitals, wf.valence_orbitals}) {
       for (auto &psi : tmp_orbs) {
         auto k = psi.k;
-        DiracOperator z3(hf.get_vex(psi, tmp_valence));
+        DiracOperator z3(hf.get_vex(psi));
+        // auto vexPsi = (z3 * psi);
+        auto vexPsi = hf.vex_psia(psi);
         DiracOperator x_b(c, DiracMatrix(0, 1 - k, 1 + k, 0), 0, true);
         auto rhs = (w * psi) + (x_a * (x_b * psi)) + (y * psi) + (z1 * psi) +
-                   (z2 * psi) + (z3 * psi);
+                   (z2 * psi) + vexPsi;
         double R = psi * rhs;
         double ens = psi.en;
         double fracdiff = (R - ens) / ens;
         printf("<%i% i|H|%i% i> = %17.11f, E = %17.11f; % .0e\n", psi.n, psi.k,
                psi.n, psi.k, R, ens, fracdiff);
       }
-      tmp_valence = true;
     }
     std::cout << "\n Total time: " << timer.reading_str() << "\n";
   }
@@ -256,11 +256,13 @@ int main(int argc, char *argv[]) {
   bool test_hf_basis = true;
   std::vector<DiracSpinor> v_basis; // = wf.core_orbitals;
   if (test_hf_basis) {
+    HartreeFock hfbasis(wf, v_basis, eps_HF);
+    hfbasis.verbose = false;
     auto basis_lst = wf.listOfStates_nk(30, 4);
     for (const auto &nk : basis_lst) {
       v_basis.emplace_back(DiracSpinor(nk[0], nk[1], wf.rgrid));
       auto tmp_vex = std::vector<double>{};
-      hf.solveValence(v_basis.back(), tmp_vex);
+      hfbasis.solveValence(v_basis.back(), tmp_vex);
     }
     wf.orthonormaliseOrbitals(v_basis, 2);
     wf.printValence(false, v_basis);
@@ -270,11 +272,8 @@ int main(int argc, char *argv[]) {
   ChronoTimer sw;
   sw.start();
 
-  // Coulomb cint(wf.core_orbitals, v_basis);
-  // cint.form_core_valence();
   std::cout << "Core-valence time: " << sw.lap_reading_str() << "\n";
   sw.start();
-  // cint.form_valence_valence();
   std::cout << "Valence-valence time: " << sw.lap_reading_str() << "\n";
 
   // const auto &psi_a = wf.core_orbitals.front();

@@ -14,8 +14,8 @@ y^k_ij(r)   := Int_0^inf [r_min^k/r_max^(k+1)]*rho(f') dr'
 rho(r')     := fi(r')*fj(r') + gi(r')gj(r')
 Lambda^k_ij := 3js((ji,jj,k),(-1/2,1/2,0))^2 * parity(li+lj+k)
 
-m_C_kakbk "C" (just parity + [j] + 3js, no sign!)
-so, C = | <k||C^k||k'> |  (abs value)
+m_C_kakbk "C" (just parity + [j] + 3js, no sign term!)
+so, C =
 C^k_ij = Sqrt([ji][jj]) * 3js((ji,jj,k),(-1/2,1/2,0)) * parity(li+lj+k)
 
 */
@@ -24,6 +24,8 @@ class Coulomb {
 
 public: // constructor + static functions
   Coulomb(const std::vector<DiracSpinor> &in_core,
+          const std::vector<DiracSpinor> &in_valence);
+  Coulomb(const Grid &in_grid, const std::vector<DiracSpinor> &in_core,
           const std::vector<DiracSpinor> &in_valence);
 
   static void calculate_y_ijk(const DiracSpinor &phi_a,
@@ -37,8 +39,10 @@ public: // constructor + static functions
 
 public: // functions
   void form_core_core();
+  void form_core_core(const DiracSpinor &psi_a);
   void form_valence_valence();
   void form_core_valence();
+  void form_core_valence(const DiracSpinor &psi_n);
 
   // MUST calculate values first!
   std::vector<double> calculate_R_abcd_k(const DiracSpinor &psi_a,
@@ -64,16 +68,23 @@ public: // functions
                            const DiracSpinor &psi_c, const DiracSpinor &psi_d,
                            int k) const;
   // getters
-  double get_angular_C_kiakibk(const DiracSpinor &phi_a,
-                               const DiracSpinor &phi_b, int k) const;
+
   double get_angular_L_kiakibk(const DiracSpinor &phi_a,
                                const DiracSpinor &phi_b, int k) const;
+  double get_angular_C_kiakibk(const DiracSpinor &phi_a,
+                               const DiracSpinor &phi_b, int k) const;
+  const std::vector<double> &get_angular_C_kiakib_k(int kia, int kib) const;
+  const std::vector<double> &get_angular_L_kiakib_k(int kia, int kib) const;
 
   const std::vector<double> &get_y_ijk(const DiracSpinor &phi_i,
                                        const DiracSpinor &phi_j, int k) const;
+  const std::vector<std::vector<double>> &
+  get_y_ijk(const DiracSpinor &phi_i, const DiracSpinor &phi_j) const;
+
+public: // functions
+  void initialise_core_core();
 
 private: // functions
-  void initialise_core_core();
   void initialise_core_valence();
   void initialise_valence_valence();
   void calculate_angular(int ki);
@@ -81,6 +92,7 @@ private: // functions
   // write another that returns pair <int, bool> = <index, val?> ?
   std::size_t find_valence_index(const DiracSpinor &phi) const;
   std::size_t find_core_index(const DiracSpinor &phi) const;
+  std::size_t find_either_index(const DiracSpinor &phi, bool &valenceQ) const;
 
   const std::vector<std::vector<double>> &get_y_abk(std::size_t a,
                                                     std::size_t b) const;
@@ -88,12 +100,6 @@ private: // functions
                                                     std::size_t b) const;
   const std::vector<std::vector<double>> &get_y_vwk(std::size_t a,
                                                     std::size_t b) const;
-
-  const std::vector<std::vector<double>> &
-  get_y_ijk(const DiracSpinor &phi_i, const DiracSpinor &phi_j) const;
-
-  const std::vector<double> &get_angular_C_kiakib_k(int kia, int kib) const;
-  const std::vector<double> &get_angular_L_kiakib_k(int kia, int kib) const;
 
 private: // data
   const std::vector<DiracSpinor> *const c_orbs_ptr;
