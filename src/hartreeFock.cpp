@@ -1,7 +1,6 @@
 #include "AtomInfo.hpp"
 #include "ChronoTimer.hpp"
 #include "DiracOperator.hpp"
-#include "ElectronOrbitals.hpp"
 #include "FileIO_fileReadWrite.hpp"
 #include "HartreeFockClass.hpp"
 #include "Nucleus.hpp"
@@ -9,11 +8,10 @@
 #include "Operators.hpp"
 #include "Parametric_potentials.hpp"
 #include "PhysConst_constants.hpp"
+#include "Wavefunction.hpp"
 #include <cmath>
 #include <iostream>
 #include <tuple>
-//
-#include "CoulombIntegrals.hpp" //for testing
 
 int main(int argc, char *argv[]) {
   ChronoTimer timer; // start the overall timer
@@ -49,9 +47,8 @@ int main(int argc, char *argv[]) {
   varalpha = sqrt(varalpha2);
   int Z = AtomInfo::get_z(Z_str);
 
-  // Generate the orbitals object:
-  ElectronOrbitals wf(Z, A, ngp, r0, rmax, varalpha);
-  // Print info to screen:
+  Wavefunction wf(Z, A, ngp, r0, rmax, varalpha);
+
   if (exclude_exchange)
     std::cout << "\nRunning Hartree (excluding exchange) for ";
   else
@@ -78,16 +75,11 @@ int main(int argc, char *argv[]) {
     int k = nk[1];
     hf.solveNewValence(n, k);
   }
-  // wf.orthonormaliseOrbitals(wf.valence_orbitals, 2);
-  // Note: it's not correct to orthogonalise valence states like this,
-  // since if we do, the orbitals will depend (weakly) on which other valence
-  // states we calculate!
   if (val_lst.size() > 0)
     std::cout << "Valence: " << timer.lap_reading_str() << "\n";
 
   // Output results:
   std::cout << "\nHartree Fock: " << wf.atom() << "\n";
-  // wf.printAtom();
   bool sorted = true;
   wf.printCore(sorted);
   std::cout << "E_core = " << core_energy

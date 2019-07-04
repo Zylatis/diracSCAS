@@ -2,7 +2,7 @@
 #include "CoulombIntegrals.hpp"
 #include <string>
 #include <vector>
-class ElectronOrbitals;
+class Wavefunction;
 class DiracSpinor;
 class Grid;
 
@@ -28,10 +28,9 @@ class HartreeFock {
   friend class Coulomb;
 
 public:
-  HartreeFock(ElectronOrbitals &wf, const std::string &in_core,
+  HartreeFock(Wavefunction &wf, const std::string &in_core,
               double eps_HF = 1.e-8, bool in_ExcludeExchange = false);
-  HartreeFock(ElectronOrbitals &wf,
-              const std::vector<DiracSpinor> &val_orbitals,
+  HartreeFock(Wavefunction &wf, const std::vector<DiracSpinor> &val_orbitals,
               double eps_HF = 1.e-8, bool in_ExcludeExchange = false);
 
   void solveNewValence(int n, int kappa);
@@ -45,7 +44,7 @@ public:
   bool verbose = true;
 
 private:
-  ElectronOrbitals *const p_wf;
+  Wavefunction *const p_wf;
   const Grid *const p_rgrid;
 
   Coulomb m_cint;
