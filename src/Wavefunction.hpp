@@ -1,10 +1,9 @@
 #pragma once
 #include "DiracSpinor.hpp"
 #include "Grid.hpp"
+#include "Nuclear.hpp"
 #include <string>
 #include <vector>
-
-enum class NucleusType { Fermi, spherical, zero };
 
 static bool dummy_bool{};
 
@@ -13,18 +12,17 @@ class Wavefunction {
 
 public:
   Wavefunction(int in_z, int in_a, int in_ngp, double rmin, double rmax,
-                   double var_alpha = 1);
+               double var_alpha = 1);
 
 public:
   // orbitals:
   std::vector<DiracSpinor> core_orbitals;
   std::vector<DiracSpinor> valence_orbitals;
-  // std::vector<DiracSpinor> basis;    // XXX break into core+valence?
 
   const Grid rgrid;
 
   // Potentials
-  std::vector<double> vnuc;
+  std::vector<double> vnuc; // make const?
   std::vector<double> vdir; // direct/local part of the electron potential
 
 private:
@@ -35,9 +33,10 @@ private:
   // nuclus info:
   double m_c, m_t;
 
-  // number of electrons in each core shell (non-rel)
-  std::vector<int> num_core_shell; // XXX This is dumb - try to fix!?
-  int num_core_electrons = 0;      // Nc = N - M
+  // Core configuration (non-rel terms)
+  std::vector<NonRelSEConfig> m_core_configs;
+
+  int num_core_electrons = 0; // Nc = N - M
   std::string m_core_string = "";
 
 public:
@@ -53,6 +52,8 @@ public:
   };
 
   std::size_t getStateIndex(int n, int k, bool &is_valence = dummy_bool) const;
+  std::size_t getStateIndex(const DiracSpinor &psi,
+                            bool &is_valence = dummy_bool) const;
 
   std::string coreConfiguration() const { return m_core_string; }
   std::string coreConfiguration_nice() const {
@@ -73,12 +74,11 @@ public:
   sortedEnergyList(const std::vector<DiracSpinor> &tmp_orbs,
                    bool do_sort = false) const;
 
-  // re-write this in terms of nkens !! XXX
-  std::vector<std::vector<int>> listOfStates_nk(int num_val, int la, int lb = 0,
-                                                bool skip_core = true) const;
+  std::vector<DiracSEnken> listOfStates_nk(int num_val, int la, int lb = 0,
+                                           bool skip_core = true) const;
 
 public:
-  void formNuclearPotential(NucleusType nucleus_type, double rc = 0,
+  void formNuclearPotential(Nuclear::Type nucleus_type, double rc = 0,
                             double t = 0);
 
   void solveDirac(DiracSpinor &psi, double e_a, const std::vector<double> &vex,
