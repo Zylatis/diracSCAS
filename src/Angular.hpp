@@ -8,18 +8,16 @@ inline int max4(int a, int b, int c, int d) {
   return std::max(std::max(a, b), std::max(c, d));
 }
 
-inline int min_lambda_ji(int a, int b, int c, int d) {
-  // specialised version! a must be max, rest must be in order!
-  auto tmp = std::max((a - b), abs(c - d));
-  return twoj(tmp); // XXX does this work??
-  // lambdamin(twoj(index)) = twoj(lambdamin(index)) ???
+inline int min_lambda_tj(int tja, int tjb, int tjc, int tjd) {
+  return std::max(abs(tja - tjd), abs(tjb - tjc)) / 2;
+}
+inline int max_lambda_tj(int tja, int tjb, int tjc, int tjd) {
+  return std::min((tja + tjd), (tjb + tjc)) / 2;
 }
 
 class SixJTable { // XXX Make this a "const k" version. Later: full version!
 public:
-  SixJTable(int in_k, int tj_max = -1)
-      : k(in_k), max_ji_sofar(-1) //, m_k_a_bcdl({})
-  {
+  SixJTable(int in_k, int tj_max = -1) : k(in_k), max_ji_sofar(-1) {
     fill(tj_max);
   }
 
@@ -28,36 +26,28 @@ private:
   int max_ji_sofar;
   std::vector<std::vector<std::vector<std::vector<std::vector<double>>>>>
       m_k_a_bcdl;
-  // mk[a][b][c][d][l];
 
 public:
   double value(int tja, int tjb, int tjc, int tjd, int l) {
+    const auto lmin = min_lambda_tj(tja, tjb, tjc, tjd);
+    if (l < lmin)
+      return 0;
+    if (l > max_lambda_tj(tja, tjb, tjc, tjd))
+      return 0;
+
     auto a = jindex(tja);
     auto b = jindex(tjb);
     auto c = jindex(tjc);
     auto d = jindex(tjd);
     auto max = max4(a, b, c, d); //
-
-    auto sj = //[&m_k_a_bcdl, = l]
-        [&](int a, int b, int c, int d) {
-          const auto lmin = min_lambda_ji(a, b, c, d);
-          auto &sj_tmp = m_k_a_bcdl[a][b][c][d];
-          const auto lmax = lmin + (int)sj_tmp.size() - 1;
-          if (l < lmin || l > lmax)
-            return 0.0;
-          return sj_tmp[l - lmin];
-        };
-
     if (max == a) {
-      std::cout << "a!\n";
-      return sj(a, b, c, d);
+      return m_k_a_bcdl[a][b][c][d][l - lmin];
     } else if (max == b) {
-      std::cout << "b!\n";
-      return sj(b, a, d, c);
+      return m_k_a_bcdl[b][a][d][c][l - lmin];
     } else if (max == c) {
-      return sj(c, d, a, b);
+      return m_k_a_bcdl[c][d][a][b][l - lmin];
     } else {
-      return sj(d, c, b, a);
+      return m_k_a_bcdl[d][c][b][a][l - lmin];
     }
   }
 
@@ -81,20 +71,21 @@ public:
       ka_bcdl.reserve(a + 1);
       for (int b = 0; b <= a; b++) {
         auto tjb = twoj(b);
-        const auto amb = tja - tjb; // no abs, always +ve
-        const auto apb = tja + tjb;
+
         std::vector<std::vector<std::vector<double>>> ka_b_cdl;
         ka_b_cdl.reserve(a + 1);
         for (int c = 0; c <= a; c++) {
           auto tjc = twoj(c);
+          const auto bmc = abs(tjb - tjc);
+          const auto bpc = tjb + tjc;
           std::vector<std::vector<double>> ka_bc_dl;
           ka_bc_dl.reserve(a + 1);
           for (int d = 0; d <= a; d++) {
             auto tjd = twoj(d);
-            const auto cmd = abs(tjc - tjd);
-            const auto cpd = tjc + tjd;
-            auto lambda_min = std::max(amb, cmd) / 2;
-            auto lambda_max = std::min(apb, cpd) / 2;
+            const auto amd = tja - tjd; // no abs, a>d
+            const auto apd = tja + tjd;
+            auto lambda_min = std::max(amd, bmc) / 2;
+            auto lambda_max = std::min(apd, bpc) / 2;
             std::vector<double> ka_bcd_l;
             ka_bcd_l.reserve(abs(lambda_max - lambda_min + 1));
             for (auto l = lambda_min; l <= lambda_max; l++) {
