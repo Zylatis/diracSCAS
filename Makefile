@@ -49,14 +49,6 @@ endif
 CXXFLAGS= -std=c++14 $(OPT) $(OMP) $(WARN) -I$(ID)
 LIBS=-lgsl -lgslcblas
 
-#These should be used with clang in debug mode only
-MSAN = -fsanitize=memory
-ASAN = -fsanitize=address
-TSAN = -fsanitize=thread
-USAN = -fsanitize=undefined -fsanitize=unsigned-integer-overflow
-#CXXFLAGS += -g $(MSAN) -fno-omit-frame-pointer
-# MSAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer ./hartreeFock
-
 #Command to compile objects and link them
 COMP=$(CXX) -c -o $@ $< $(CXXFLAGS)
 LINK=$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBS)
@@ -68,7 +60,7 @@ ALLEXES = $(addprefix $(XD)/, \
 )
 
 DEFAULTEXES = $(addprefix $(XD)/, \
- hartreeFock wigner nuclearData dmeXSection \
+ hartreeFock nuclearData \
 )
 
 #Default make rule:

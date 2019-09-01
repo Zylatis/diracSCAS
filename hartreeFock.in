@@ -1,87 +1,40 @@
 Atom {
   Z = Cs;
-  A;
-  varAlpha2;
+  A = 133;
 }
 
 HartreeFock {
-  core = [Xe];
+  core = [Xe]; // Note: if you change atoms, you'll also need to change core!
   valence = 7sp;
-  method; // HartreeFock(dflt), ApproxHF, Hartree, GreenPRM, TietzPRM
-  convergence;
-}
-
-Nucleus {
-  rrms;
-  skin_t;
-  type; // Fermi (dflt), spherical, zero
+  sortOuput = false;
+  method; // HartreeFock(dflt), Hartree
 }
 
 Grid {
   r0 = 1e-7;
   rmax = 120.0;
-  ngp = 2000;
-  type; // loglinear(dflt), logarithmic, linear
+  ngp = 3000;
+  type;
   b;
 }
 
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
+// You can use this to read input options from this file
+PolarisationOperator {
+  myInput1 = 1;
+  myInput2 = 2;
+}
+
 // Modules:
 //   Each Module/MatrixElements will be run in order.
 //   You can comment-out just the block name, and the block will be skiped.
 
-// MatrixElements::E1 {}
-
-// Module::Tests
-{
-  orthonormal = true;
-  orthonormal_all = false;
-  Hamiltonian = false;
-}
-
-// Module::BohrWeisskopf
-{
+// This module calculates the Bohr-BohrWeisskopf effect:
+// Leave options blank to use defaults, or add numbers to over-ride them
+Module::BohrWeisskopf {
   mu;
   I;
   rrms;
-  // only used for doubly-odd (current values for 212-Fr)
-  mu1 = 4.00;
-  I1 = 4.5;
-  l1 = 5.;
-  gl1 = 1;
-  I2 = 0.5;
-  l2 = 1.;
-  printF = false;
 }
 
-// Module::WriteOrbitals
-{ label = outputLabel; }
-// Plot in GNUPLOT like: (e.g.)
-// plot for [i=2:20] "file.txt" u 1:i every :::0::0  w l t columnheader(i)
-// plot for [i=2:20] "file.txt" u 1:i every :::1::1  w l t columnheader(i)
-// plot "file.txt" u 1:2 every :::2::2  w l t "Core Density"
-
-/////////////////////////////////////////////////////////////////
-// Module::AtomicKernal
-{
-  Emin = 0.01;
-  Emax = 4.0;
-  Esteps = 25;
-  qmin = 0.001;
-  qmax = 4.0;
-  qsteps = 100;
-  max_l_bound = 1;
-  max_L = 2;
-  output_text = true;
-  output_binary = true;
-  label = test_new;
-  use_plane_waves = false;
-}
-
-// Module::FitParametric
-{
-  method = Green;     // Green, Tietz
-  statesToFit = core; // core, valence, both
-  fitWorst = false;
-}
+// This one writes orbitals (wavefunctions) to text file for plotting
+// Module::WriteOrbitals { label = outputLabel; }

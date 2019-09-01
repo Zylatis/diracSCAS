@@ -56,36 +56,37 @@ int main(int argc, char *argv[]) {
   auto HF_method = HartreeFock::parseMethod(
       input.get<std::string>("HartreeFock", "method", "HartreeFock"));
 
-  // For when using Hartree, or a parametric potential:
-  double H_d = 0.0, g_t = 0.0;
-  if (HF_method == HFMethod::GreenPRM) {
-    H_d = input.get("HartreeFock", "Green_H", 0.0);
-    g_t = input.get("HartreeFock", "Green_d", 0.0);
-    std::cout << "Using Greens Parametric Potential\n";
-  } else if (HF_method == HFMethod::TietzPRM) {
-    H_d = input.get("HartreeFock", "Tietz_g", 0.0);
-    g_t = input.get("HartreeFock", "Tietz_t", 0.0);
-    std::cout << "Using Greens Tietz Potential\n";
-  } else if (HF_method == HFMethod::Hartree) {
-    std::cout << "Using Hartree Method (no Exchange)\n";
+  // Solve Hartree equations for the core:
+  wf.hartreeFockCore(HF_method, str_core, eps_HF);
+
+  // ***************************************************************************
+  // ***************************************************************************
+  // Need to add to effective polarisation potential to V_dir here
+  // V_dir is stored in wf.vdir[i]  (ith array element)
+  // V_dir is the "direct" part of the electrostatic potential
+  // (not including nuclear potential)
+  // The points along radius are stored in wf.rgrid.r[i]
+  //  r[i] is value of r at ith point along the grid
+
+  // example reading in input option:
+  double input1 = input.get("PolarisationOperator", "myInput1", 0.0);
+  double input2 = input.get("PolarisationOperator", "myInput2", 0.0);
+  std::cout << "input1 = " << input1 << ", input2 = " << input2 << "\n";
+
+  // auto alpha_d = ...; // this needs to be set
+  for (unsigned int i = 0; i < wf.rgrid.ngp; i++) {
+    // auto r = wf.rgrid.r[i];
+    // wf.vdir[i] += .....; // add polarisation operator here
   }
 
-  { // Solve Hartree equations for the core:
-    ChronoTimer t("Core");
-    wf.hartreeFockCore(HF_method, str_core, eps_HF, H_d, g_t);
-  }
+  // ***************************************************************************
+  // ***************************************************************************
 
   // Solve for the valence states:
   auto valence_list = (wf.Ncore() < wf.Znuc())
                           ? input.get<std::string>("HartreeFock", "valence", "")
                           : "";
-  if (valence_list != "") {
-    // 'if' is only for output format, nothing bad happens if below are called
-    ChronoTimer t("Valence");
-    wf.hartreeFockValence(valence_list);
-    if (input.get("HartreeFock", "orthonormaliseValence", false))
-      wf.orthonormaliseOrbitals(wf.valence_orbitals, 2);
-  }
+  wf.hartreeFockValence(valence_list);
 
   // Output results:
   std::cout << "\nHartree Fock: " << wf.atom() << "\n";
@@ -95,28 +96,6 @@ int main(int argc, char *argv[]) {
 
   // run each of the modules
   Module::runModules(input, wf);
-
-  //*********************************************************
-  //               TESTS
-  //*********************************************************
-
-  bool test_hf_basis = false;
-  if (test_hf_basis) {
-    auto basis_lst = AtomInfo::listOfStates_nk("9spd8f");
-    std::vector<DiracSpinor> basis = wf.core_orbitals;
-    HartreeFock hfbasis(wf, basis, 1.0e-6);
-    hfbasis.verbose = false;
-    for (const auto &nk : basis_lst) {
-      if (wf.isInCore(nk.n, nk.k))
-        continue;
-      basis.emplace_back(DiracSpinor(nk.n, nk.k, wf.rgrid));
-      auto tmp_vex = std::vector<double>{};
-      hfbasis.solveValence(basis.back(), tmp_vex);
-    }
-    wf.orthonormaliseOrbitals(basis, 2);
-    wf.printValence(false, basis);
-    std::cout << "\n Total time: " << timer.reading_str() << "\n";
-  }
 
   return 0;
 }
