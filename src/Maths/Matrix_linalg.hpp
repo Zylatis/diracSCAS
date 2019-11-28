@@ -1,23 +1,16 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <gsl/gsl_linalg.h>
 #include <iostream>
 #include <vector>
 
 /*
-
-Note: this is a pretty ineficient way of doing things..
-Involves lots of copies into/out of gsl
-
-There's probably a better way to template as well.
-
 Eigen probably better option!
-
 */
 
 namespace Matrix {
 
-// template <typename T>
 class SqMatrix {
   // Suddenly gets very slow around n=170.. why? When other method doesn't
 private:
@@ -29,27 +22,155 @@ public:
 public:
   SqMatrix(int in_n) : m(gsl_matrix_alloc(in_n, in_n)), n(in_n) {}
   ~SqMatrix() { gsl_matrix_free(m); }
+  SqMatrix(const SqMatrix &matrix)
+      : m(gsl_matrix_alloc(matrix.n, matrix.n)), n(matrix.n) {
+    int n2 = n * n;
+    for (int i = 0; i < n2; i++)
+      m->data[i] = matrix.m->data[i];
+  }
 
-  double *operator[](int i) { return &(m->data[i * n]); }
+  void clear(double value = 0.0) {
+    const int n2 = n * n;
+    for (int i = 0; i < n2; i++)
+      m->data[i] = value;
+  }
+
+  void scale(double value) {
+    const int n2 = n * n;
+    for (int i = 0; i < n2; i++)
+      m->data[i] *= value;
+  }
+
+  void clip_low(double value) {
+    const int n2 = n * n;
+    for (int i = 0; i < n2; i++) {
+      if (std::abs(m->data[i]) < value)
+        m->data[i] = 0.0;
+    }
+  }
+  void clip_high(double value) {
+    const int n2 = n * n;
+    for (int i = 0; i < n2; i++) {
+      if (std::abs(m->data[i]) > value) {
+        auto s = m->data[i] > 0 ? 1 : -1;
+        m->data[i] = s * value;
+      }
+    }
+  }
+
+  void make_diag(double value = 1.0) {
+    for (int i = 0; i < n; ++i) {
+      for (int j = 0; j < n; ++j) {
+        (*this)[i][j] = (i == j) ? value : 0.0;
+      }
+    }
+  }
+
+  SqMatrix make_copy() const {
+    SqMatrix copiedM(n);
+    int n2 = n * n;
+    for (int i = 0; i < n2; i++)
+      copiedM.m->data[i] = m->data[i];
+    return copiedM;
+  }
+
+  double *operator[](int i) const { return &(m->data[i * n]); }
+
+  friend SqMatrix operator*(const SqMatrix &lhs, const SqMatrix &rhs) {
+    auto n = std::min(lhs.n, rhs.n);
+    SqMatrix product(n);
+    for (int i = 0; i < n; ++i) {
+      for (int j = 0; j < n; ++j) {
+        double cij = 0.0;
+        for (int k = 0; k < n; ++k) {
+          cij += lhs[i][k] * rhs[k][j];
+        }
+        product[i][j] = cij;
+      }
+    }
+    return product;
+  }
+
+  SqMatrix &operator+=(const SqMatrix rhs) {
+    int n2 = n * n;
+    for (int i = 0; i < n2; i++)
+      m->data[i] += rhs.m->data[i];
+    return *this;
+  }
+  friend SqMatrix operator+(SqMatrix lhs, const SqMatrix &rhs) {
+    lhs += rhs;
+    return lhs;
+  }
+  SqMatrix &operator-=(const SqMatrix rhs) {
+    int n2 = n * n;
+    for (int i = 0; i < n2; i++)
+      m->data[i] -= rhs.m->data[i];
+    return *this;
+  }
+  friend SqMatrix operator-(SqMatrix lhs, const SqMatrix &rhs) {
+    lhs -= rhs;
+    return lhs;
+  }
+  SqMatrix &operator*=(const double x) {
+    scale(x);
+    return *this;
+  }
+  friend SqMatrix operator*(const double x, SqMatrix rhs) {
+    rhs *= x;
+    return rhs;
+  }
 
   void invert() {
     // note: this is destuctive: matrix will be inverted
     // Usuing this method, hard not to be: LU decomp changes Matrix
     //(So, would require copy to avoid this)
+    // std::cout << __LINE__ << "\n";
     gsl_matrix *inverse = gsl_matrix_alloc(n, n);
     gsl_permutation *perm = gsl_permutation_alloc(n);
     int s;
+    // std::cout << __LINE__ << "\n";
     gsl_linalg_LU_decomp(m, perm, &s);
     gsl_linalg_LU_invert(m, perm, inverse);
     int n2 = n * n;
     for (int i = 0; i < n2; i++)
       m->data[i] = inverse->data[i];
+    // std::cout << __LINE__ << "\n";
     gsl_permutation_free(perm);
     gsl_matrix_free(inverse);
+    // std::cout << __LINE__ << "\n";
+  }
+
+  SqMatrix inverse() const { // make  NODISCARD!
+    auto inverse = this->make_copy();
+    inverse.invert();
+    return inverse;
   }
 };
+
+/*
+auto m = Matrix::SqMatrix(2);
+for (int i = 0; i < 2; ++i)
+  for (int j = 0; j < 2; ++j)
+    m[i][j] = i + j + 6.001;
+for (int i = 0; i < 2; ++i)
+  for (int j = 0; j < 2; ++j)
+    std::cout << m[i][j] << "\n";
+
+auto m2 = m.make_copy();
+
+auto minv = m.inverse();
+auto m3 = m * minv;
+m3.clip_low(1.e-6);
+auto m4 = 6 * m3;
+for (int i = 0; i < 2; ++i)
+  for (int j = 0; j < 2; ++j)
+    std::cout << m3[i][j] << " " << m4[i][j] << "\n";
+*/
+
 //
-// //******************************************************************************
+//
+//
+//******************************************************************************
 // template <typename T>
 // std::vector<std::vector<T>> invert(const std::vector<std::vector<T>> &M) {
 //
